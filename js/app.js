@@ -174,9 +174,20 @@ function renderDashboard() {
         </div>
       </div>` : ''}
 
+      <!-- Keyboard shortcuts -->
+      <div class="bg-surface-light rounded-xl p-5 border border-gray-700 mb-6">
+        <h3 class="font-semibold mb-3">Keyboard Shortcuts</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-400">
+          <div><kbd class="px-2 py-0.5 bg-surface rounded text-gray-300">←</kbd> <kbd class="px-2 py-0.5 bg-surface rounded text-gray-300">→</kbd> Previous / Next</div>
+          <div><kbd class="px-2 py-0.5 bg-surface rounded text-gray-300">Space</kbd> Reveal answer / Flip card</div>
+          <div><kbd class="px-2 py-0.5 bg-surface rounded text-gray-300">N</kbd> or <kbd class="px-2 py-0.5 bg-surface rounded text-gray-300">1</kbd> Still learning / Needs practice</div>
+          <div><kbd class="px-2 py-0.5 bg-surface rounded text-gray-300">Y</kbd> or <kbd class="px-2 py-0.5 bg-surface rounded text-gray-300">2</kbd> Know it / Got it</div>
+        </div>
+      </div>
+
       <!-- Reset -->
       <div class="text-center">
-        <button onclick="resetProgress()" class="text-sm text-gray-500 hover:text-red-400 transition">Reset all progress</button>
+        <button onclick="resetAll()" class="px-6 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30 transition text-sm font-medium">Reset All Progress</button>
       </div>
     </div>
   `;
@@ -621,6 +632,96 @@ function escHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// ========== KEYBOARD CONTROLS ==========
+document.addEventListener('keydown', (e) => {
+  // Don't handle keys if user is typing in an input/select
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+  if (State.currentMode === 'oral') {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); oralNav(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); oralNav(1); }
+    else if (e.key === ' ') {
+      e.preventDefault();
+      const revealBtn = document.getElementById('reveal-btn');
+      if (revealBtn && !revealBtn.classList.contains('hidden')) {
+        document.getElementById('answer-area').classList.add('show');
+        revealBtn.classList.add('hidden');
+      }
+    }
+    else if (e.key === '1' || e.key === 'n') {
+      // 1 or N = needs practice
+      const questions = getFilteredOralQuestions();
+      const q = questions[State.oral.currentIndex];
+      if (q && !Progress.data.oral.answered.includes(q.id)) markOral(q.id, false);
+    }
+    else if (e.key === '2' || e.key === 'y') {
+      // 2 or Y = got it
+      const questions = getFilteredOralQuestions();
+      const q = questions[State.oral.currentIndex];
+      if (q && !Progress.data.oral.answered.includes(q.id)) markOral(q.id, true);
+    }
+  }
+
+  else if (State.currentMode === 'flashcards') {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); fcNav(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); fcNav(1); }
+    else if (e.key === ' ') {
+      e.preventDefault();
+      State.flashcards.flipped = !State.flashcards.flipped;
+      const flipCard = document.getElementById('flip-card');
+      if (flipCard) flipCard.classList.toggle('flipped');
+    }
+    else if (e.key === '1' || e.key === 'n') {
+      const cards = getFilteredFlashcards();
+      const card = cards[State.flashcards.currentIndex];
+      if (card) fcMark(card.id, false);
+    }
+    else if (e.key === '2' || e.key === 'y') {
+      const cards = getFilteredFlashcards();
+      const card = cards[State.flashcards.currentIndex];
+      if (card) fcMark(card.id, true);
+    }
+  }
+
+  else if (State.currentMode === 'problems') {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); selectProblem(Math.max(0, State.problems.currentIndex - 1)); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); selectProblem(Math.min(DATA.problems.length - 1, State.problems.currentIndex + 1)); }
+    else if (e.key === ' ') {
+      e.preventDefault();
+      // Reveal next unrevealed step
+      const prob = DATA.problems[State.problems.currentIndex];
+      if (prob) {
+        let revealed = false;
+        for (let i = 0; i < prob.steps.length; i++) {
+          const stepKey = `${prob.id}-${i}`;
+          if (!State.problems.revealedSteps.has(stepKey)) {
+            revealStep(stepKey);
+            revealed = true;
+            break;
+          }
+        }
+        if (!revealed && !State.problems.revealedSteps.has(`${prob.id}-final`)) {
+          revealStep(`${prob.id}-final`);
+        }
+      }
+    }
+  }
+});
+
+// ========== RESET ALL ==========
+function resetAll() {
+  if (confirm('Reset ALL progress and start fresh? This clears all localStorage data and cannot be undone.')) {
+    localStorage.clear();
+    Progress._data = null;
+    Progress.load();
+    State.oral = { currentIndex: 0, filter: 'all', difficultyFilter: 'all', answered: new Set(), correct: new Set() };
+    State.flashcards = { currentIndex: 0, filter: 'all', flipped: false, known: new Set(), queue: [] };
+    State.problems = { currentIndex: 0, revealedSteps: new Set() };
+    State.concepts = { filter: 'all', expanded: null };
+    switchMode('dashboard');
+  }
 }
 
 // ========== INIT ==========
