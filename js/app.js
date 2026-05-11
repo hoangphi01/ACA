@@ -267,7 +267,8 @@ function renderTopicDetail(topicId) {
             </button>
             ${isExpanded ? `
             <div class="px-4 pb-4 border-t border-gray-700">
-              <p class="text-sm text-gray-300 mt-3 mb-3">${escHtml(c.explanation)}</p>
+              <p class="text-sm text-gray-300 mt-3 mb-1">${escHtml(c.explanation)}</p>
+              ${VI.concepts[c.id] ? `<p class="text-xs text-gray-500 italic mb-3">${escHtml(VI.concepts[c.id].explanation)}</p>` : '<div class="mb-3"></div>'}
               <ul class="space-y-1 mb-3">
                 ${c.keyPoints.map(kp => `<li class="text-sm flex gap-2"><span class="text-${color} mt-0.5">-</span> ${escHtml(kp)}</li>`).join('')}
               </ul>
@@ -298,7 +299,8 @@ function renderTopicDetail(topicId) {
               ${isAnswered ? `<span class="text-xs ${isCorrect ? 'text-green-400' : 'text-red-400'}">${isCorrect ? 'Got it' : 'Review'}</span>` : ''}
               ${isAnswered ? `<button onclick="retryOral(${q.id})" class="text-xs text-gray-500 hover:text-gray-300 ml-auto transition">Try Again</button>` : ''}
             </div>
-            <p class="text-sm font-medium mb-3">${escHtml(q.question)}</p>
+            <p class="text-sm font-medium mb-1">${escHtml(q.question)}</p>
+            ${VI.oral[q.id] ? `<p class="text-xs text-gray-500 italic mb-3">${escHtml(VI.oral[q.id].question)}</p>` : '<div class="mb-3"></div>'}
             ${!isExpanded ? `
             <button onclick="State.topicDetail.expandedOral.add(${q.id}); render()" class="w-full py-2 rounded-lg bg-${color}/20 text-${color}-light hover:bg-${color}/30 transition text-sm font-medium">Reveal Answer</button>
             ` : `
@@ -307,6 +309,7 @@ function renderTopicDetail(topicId) {
                 ${q.keyPoints.map(kp => `<span class="px-2 py-0.5 bg-${color}/10 text-${color}-light rounded text-xs">${escHtml(kp)}</span>`).join('')}
               </div>
               <p class="text-sm leading-relaxed whitespace-pre-line">${escHtml(q.answer)}</p>
+              ${VI.oral[q.id] ? viBlock(VI.oral[q.id].answer) : ''}
             </div>
             ${!isAnswered ? `
             <div class="flex gap-2">
@@ -344,6 +347,7 @@ function renderTopicDetail(topicId) {
               <span class="text-xs text-gray-500 mb-1 block capitalize">${card.category}</span>
               <h4 class="font-semibold text-${color}-light mb-2 text-sm">${escHtml(card.front)}</h4>
               <p class="text-sm leading-relaxed whitespace-pre-line">${escHtml(card.back)}</p>
+            ${VI.flashcards[card.id] ? viBlock(VI.flashcards[card.id].back) : ''}
             </div>
           </div>
         </div>
@@ -381,7 +385,8 @@ function renderTopicDetail(topicId) {
         </div>` : ''}
         <div class="bg-surface-light rounded-xl p-5 border border-gray-700">
           <h4 class="font-semibold mb-2 text-sm">${escHtml(prob.title)}</h4>
-          <p class="text-sm text-gray-300 whitespace-pre-line mb-4">${escHtml(prob.problem)}</p>
+          <p class="text-sm text-gray-300 whitespace-pre-line mb-1">${escHtml(prob.problem)}</p>
+          ${VI.problems[prob.id] ? `<p class="text-xs text-gray-500 italic whitespace-pre-line mb-4">${escHtml(VI.problems[prob.id].problem)}</p>` : '<div class="mb-4"></div>'}
           <div class="space-y-2">
             ${prob.steps.map((step, i) => {
               const stepKey = `topic-${prob.id}-${i}`;
@@ -706,7 +711,8 @@ function renderOral() {
           <span class="px-2 py-0.5 rounded text-xs font-medium ${q.category === 'cache' ? 'bg-cache/20 text-cache-light' : 'bg-modern/20 text-modern-light'}">${q.category === 'cache' ? 'Cache' : 'Modern Solutions'}</span>
           <span class="text-xs text-gray-500">${q.subcategory.replace(/-/g, ' ')}</span>
         </div>
-        <p class="text-lg font-medium mb-4">${escHtml(q.question)}</p>
+        <p class="text-lg font-medium mb-2">${escHtml(q.question)}</p>
+        ${VI.oral[q.id] ? `<p class="text-sm text-gray-500 italic mb-4">${escHtml(VI.oral[q.id].question)}</p>` : ''}
         <p class="text-sm text-gray-400 italic mb-4">Practice answering out loud, then click to reveal the expected answer.</p>
 
         <!-- Key points hint -->
@@ -723,6 +729,7 @@ function renderOral() {
           <div class="mt-4 p-4 bg-surface rounded-lg border border-gray-600 answer-text">
             <h4 class="font-semibold text-modern-light mb-2">Expected Answer:</h4>
             <p class="text-sm leading-relaxed whitespace-pre-line">${escHtml(q.answer)}</p>
+            ${VI.oral[q.id] ? viBlock(VI.oral[q.id].answer) : ''}
           </div>
           ${!isAnswered ? `
           <div class="flex gap-3 mt-4">
@@ -796,7 +803,8 @@ function renderConcepts() {
             </button>
             ${State.concepts.expanded === c.id ? `
             <div class="px-4 pb-4 border-t border-gray-700">
-              <p class="text-sm text-gray-300 mt-3 mb-3">${escHtml(c.explanation)}</p>
+              <p class="text-sm text-gray-300 mt-3 mb-1">${escHtml(c.explanation)}</p>
+              ${VI.concepts[c.id] ? `<p class="text-xs text-gray-500 italic mb-3">${escHtml(VI.concepts[c.id].explanation)}</p>` : '<div class="mb-3"></div>'}
               <div class="mb-3">
                 <h4 class="text-xs font-semibold text-gray-400 uppercase mb-2">Key Points</h4>
                 <ul class="space-y-1">
@@ -861,6 +869,7 @@ function renderFlashcards() {
             <span class="text-xs text-gray-500 mb-2 block capitalize">${card.category}</span>
             <h4 class="font-semibold text-modern-light mb-3">${escHtml(card.front)}</h4>
             <p class="text-sm leading-relaxed whitespace-pre-line">${escHtml(card.back)}</p>
+            ${VI.flashcards[card.id] ? viBlock(VI.flashcards[card.id].back) : ''}
           </div>
         </div>
       </div>
@@ -935,7 +944,8 @@ function renderProblems() {
           <span class="text-xs text-gray-500">${prob.type.replace(/-/g, ' ')}</span>
         </div>
         <h3 class="text-lg font-semibold mb-3">${escHtml(prob.title)}</h3>
-        <p class="text-sm text-gray-300 whitespace-pre-line mb-6">${escHtml(prob.problem)}</p>
+        <p class="text-sm text-gray-300 whitespace-pre-line mb-1">${escHtml(prob.problem)}</p>
+        ${VI.problems[prob.id] ? `<p class="text-xs text-gray-500 italic whitespace-pre-line mb-6">${escHtml(VI.problems[prob.id].problem)}</p>` : '<div class="mb-6"></div>'}
 
         <!-- Steps -->
         <div class="space-y-3">
@@ -1102,6 +1112,11 @@ function escHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+function viBlock(text) {
+  if (!text) return '';
+  return `<div class="mt-2 pt-2 border-t border-gray-700/50"><p class="text-sm leading-relaxed whitespace-pre-line text-gray-400 italic">${escHtml(text)}</p></div>`;
 }
 
 // ========== KEYBOARD CONTROLS ==========
