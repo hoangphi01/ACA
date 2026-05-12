@@ -6,7 +6,8 @@ const State = {
   concepts: { filter: 'all', expanded: null },
   flashcards: { currentIndex: 0, filter: 'all', flipped: false, known: new Set(), queue: [] },
   problems: { currentIndex: 0, revealedSteps: new Set() },
-  topicDetail: { expandedConcepts: new Set(), expandedOral: new Set(), fcIndex: 0, fcFlipped: false, probIndex: 0, revealedSteps: new Set(), collapsedSections: new Set() }
+  topicDetail: { expandedConcepts: new Set(), expandedOral: new Set(), fcIndex: 0, fcFlipped: false, probIndex: 0, revealedSteps: new Set(), collapsedSections: new Set() },
+  quiz: { mode: 'setup', filter: 'all', count: 10, questions: [], currentIndex: 0, answers: {}, submitted: false }
 };
 
 // ========== PROGRESS (localStorage) ==========
@@ -20,7 +21,7 @@ const Progress = {
     return this._data;
   },
   _default() {
-    return { oral: { answered: [], correct: [] }, flashcards: { known: [], seen: [] }, problems: { completed: [] }, streak: { last: null, count: 0 }, startDate: new Date().toISOString() };
+    return { oral: { answered: [], correct: [] }, flashcards: { known: [], seen: [] }, problems: { completed: [] }, quiz: { history: [], answers: {} }, streak: { last: null, count: 0 }, startDate: new Date().toISOString() };
   },
   save() { localStorage.setItem(this._key, JSON.stringify(this._data)); },
   get data() { if (!this._data) this.load(); return this._data; },
@@ -140,6 +141,7 @@ function render() {
     case 'topics-modern': content.innerHTML = renderTopicList('modern-solutions'); break;
     case 'topics-cache': content.innerHTML = renderTopicList('cache'); break;
     case 'topic-detail': content.innerHTML = renderTopicDetail(State.currentTopicId); break;
+    case 'quiz': content.innerHTML = renderQuiz(); break;
   }
   attachEventListeners();
   window.scrollTo(0, 0);
@@ -604,7 +606,7 @@ function renderDashboard() {
 
       <!-- Quick access cards -->
       <h3 class="font-semibold mb-3">Mixed Practice</h3>
-      <div class="grid md:grid-cols-3 gap-4 mb-6">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <button onclick="switchMode('oral')" class="bg-surface-light rounded-xl p-4 border border-gray-700 hover:border-modern transition text-left group">
           <h3 class="font-semibold text-sm mb-1 group-hover:text-modern transition">Oral Simulator</h3>
           <p class="text-xs text-gray-400">${oralDone}/${oralTotal} answered</p>
@@ -616,6 +618,10 @@ function renderDashboard() {
         <button onclick="switchMode('problems')" class="bg-surface-light rounded-xl p-4 border border-gray-700 hover:border-purple-500 transition text-left group">
           <h3 class="font-semibold text-sm mb-1 group-hover:text-purple-400 transition">Problems</h3>
           <p class="text-xs text-gray-400">${probDone}/${probTotal} solved</p>
+        </button>
+        <button onclick="startQuiz('all', 10); switchMode('quiz')" class="bg-surface-light rounded-xl p-4 border border-gray-700 hover:border-green-500 transition text-left group">
+          <h3 class="font-semibold text-sm mb-1 group-hover:text-green-400 transition">Quick Quiz</h3>
+          <p class="text-xs text-gray-400">10 MCQ questions</p>
         </button>
       </div>
 
@@ -1214,6 +1220,296 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
+
+// ========== QUIZ ==========
+function startQuiz(filter, count) {
+  let pool = MCQ.slice();
+  if (filter === 'modern-solutions') pool = pool.filter(q => !q.topic.startsWith('cache'));
+  else if (filter === 'cache') pool = pool.filter(q => q.topic.startsWith('cache'));
+  // Shuffle
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  State.quiz = { mode: 'active', filter, count, questions: pool.slice(0, count), currentIndex: 0, answers: {}, submitted: false };
+  render();
+}
+
+function quizSelect(qId, optIndex) {
+  if (State.quiz.submitted) return;
+  State.quiz.answers[qId] = optIndex;
+  render();
+}
+
+function quizNext(dir) {
+  State.quiz.currentIndex = Math.max(0, Math.min(State.quiz.questions.length - 1, State.quiz.currentIndex + dir));
+  render();
+}
+
+function quizSubmit() {
+  State.quiz.submitted = true;
+  // Save to progress
+  const p = Progress.data;
+  if (!p.quiz) p.quiz = { history: [], answers: {} };
+  const qs = State.quiz.questions;
+  let correct = 0;
+  qs.forEach(q => {
+    const ans = State.quiz.answers[q.id];
+    const isCorrect = ans === q.correct;
+    if (isCorrect) correct++;
+    p.quiz.answers[q.id] = isCorrect;
+  });
+  const topicBreakdown = {};
+  qs.forEach(q => {
+    if (!topicBreakdown[q.topic]) topicBreakdown[q.topic] = { correct: 0, total: 0 };
+    topicBreakdown[q.topic].total++;
+    if (State.quiz.answers[q.id] === q.correct) topicBreakdown[q.topic].correct++;
+  });
+  p.quiz.history.push({ date: new Date().toISOString(), score: correct, total: qs.length, filter: State.quiz.filter, topicBreakdown });
+  Progress.save();
+  State.quiz.currentIndex = -1; // show results
+  render();
+}
+
+function renderQuiz() {
+  const qz = State.quiz;
+
+  // Setup screen
+  if (qz.mode === 'setup') {
+    const totalMCQ = MCQ.length;
+    const modernCount = MCQ.filter(q => !q.topic.startsWith('cache')).length;
+    const cacheCount = MCQ.filter(q => q.topic.startsWith('cache')).length;
+    const p = Progress.data;
+    const history = (p.quiz && p.quiz.history) || [];
+    const lastTest = history.length ? history[history.length - 1] : null;
+
+    return `
+    <div class="max-w-2xl mx-auto slide-in">
+      <div class="mb-6">
+        <h2 class="text-2xl font-bold mb-1">Mini Test</h2>
+        <p class="text-gray-400 text-sm">Quick multiple choice quiz to test your knowledge</p>
+      </div>
+
+      <!-- Quick start cards -->
+      <div class="grid gap-3 sm:grid-cols-3 mb-6">
+        <button onclick="startQuiz('all', 5)" class="bg-surface-light rounded-xl p-5 border border-gray-700 hover:border-modern transition text-left group">
+          <h3 class="font-semibold text-sm group-hover:text-modern-light transition mb-1">Quick 5</h3>
+          <p class="text-xs text-gray-400">5 random questions, ~2 min</p>
+        </button>
+        <button onclick="startQuiz('all', 10)" class="bg-surface-light rounded-xl p-5 border border-modern transition text-left group">
+          <h3 class="font-semibold text-sm text-modern-light mb-1">Standard 10</h3>
+          <p class="text-xs text-gray-400">10 random questions, ~5 min</p>
+        </button>
+        <button onclick="startQuiz('all', 25)" class="bg-surface-light rounded-xl p-5 border border-gray-700 hover:border-modern transition text-left group">
+          <h3 class="font-semibold text-sm group-hover:text-modern-light transition mb-1">Full 25</h3>
+          <p class="text-xs text-gray-400">25 questions, ~10 min</p>
+        </button>
+      </div>
+
+      <!-- By chapter -->
+      <h3 class="font-semibold text-sm mb-3">By Chapter</h3>
+      <div class="grid gap-3 sm:grid-cols-2 mb-6">
+        <button onclick="startQuiz('modern-solutions', 10)" class="bg-surface-light rounded-xl p-4 border border-gray-700 hover:border-modern transition text-left group">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="w-2 h-2 rounded-full bg-modern"></span>
+            <h3 class="font-semibold text-sm group-hover:text-modern-light transition">Modern Solutions</h3>
+          </div>
+          <p class="text-xs text-gray-400">${modernCount} questions available</p>
+        </button>
+        <button onclick="startQuiz('cache', 10)" class="bg-surface-light rounded-xl p-4 border border-gray-700 hover:border-cache transition text-left group">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="w-2 h-2 rounded-full bg-cache"></span>
+            <h3 class="font-semibold text-sm group-hover:text-cache-light transition">Cache</h3>
+          </div>
+          <p class="text-xs text-gray-400">${cacheCount} questions available</p>
+        </button>
+      </div>
+
+      <!-- History -->
+      ${history.length ? `
+      <h3 class="font-semibold text-sm mb-3">Recent Results</h3>
+      <div class="space-y-2 mb-6">
+        ${history.slice(-5).reverse().map(h => {
+          const pct = Math.round((h.score / h.total) * 100);
+          const color = pct >= 80 ? 'green' : pct >= 60 ? 'yellow' : 'red';
+          const dateStr = new Date(h.date).toLocaleDateString();
+          return `
+          <div class="bg-surface-light rounded-lg px-4 py-3 border border-gray-700 flex items-center justify-between">
+            <div>
+              <span class="text-sm font-medium">${h.score}/${h.total}</span>
+              <span class="text-xs text-gray-500 ml-2">${dateStr}</span>
+              <span class="text-xs text-gray-500 ml-2">${h.filter === 'all' ? 'All topics' : h.filter === 'cache' ? 'Cache' : 'Modern Solutions'}</span>
+            </div>
+            <span class="text-sm font-bold text-${color}-400">${pct}%</span>
+          </div>`;
+        }).join('')}
+      </div>` : ''}
+
+      <p class="text-center text-xs text-gray-500">${totalMCQ} total questions in the question bank</p>
+    </div>`;
+  }
+
+  // Results screen
+  if (qz.mode === 'active' && qz.submitted && qz.currentIndex === -1) {
+    const qs = qz.questions;
+    let correct = 0;
+    qs.forEach(q => { if (qz.answers[q.id] === q.correct) correct++; });
+    const pct = Math.round((correct / qs.length) * 100);
+    const color = pct >= 80 ? 'green' : pct >= 60 ? 'yellow' : 'red';
+
+    // Topic breakdown
+    const breakdown = {};
+    qs.forEach(q => {
+      const t = TOPICS.find(t2 => t2.id === q.topic);
+      const label = t ? t.title : q.topic;
+      if (!breakdown[label]) breakdown[label] = { correct: 0, total: 0 };
+      breakdown[label].total++;
+      if (qz.answers[q.id] === q.correct) breakdown[label].correct++;
+    });
+
+    return `
+    <div class="max-w-2xl mx-auto slide-in">
+      <div class="text-center mb-8">
+        <div class="text-6xl font-bold text-${color}-400 mb-2">${pct}%</div>
+        <p class="text-xl font-semibold">${correct} / ${qs.length} correct</p>
+        <p class="text-sm text-gray-400 mt-1">${pct >= 80 ? 'Great job!' : pct >= 60 ? 'Good effort, review the topics below.' : 'Keep studying, you\'ll get there!'}</p>
+      </div>
+
+      <!-- Topic breakdown -->
+      <div class="bg-surface-light rounded-xl p-5 border border-gray-700 mb-6">
+        <h3 class="font-semibold text-sm mb-3">Topic Breakdown</h3>
+        <div class="space-y-2">
+          ${Object.entries(breakdown).map(([label, d]) => {
+            const tpct = Math.round((d.correct / d.total) * 100);
+            const tc = tpct >= 80 ? 'green' : tpct >= 60 ? 'yellow' : 'red';
+            return `
+            <div class="flex items-center gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between text-xs mb-1">
+                  <span class="truncate">${label}</span>
+                  <span class="text-${tc}-400 font-semibold shrink-0 ml-2">${d.correct}/${d.total}</span>
+                </div>
+                <div class="w-full bg-surface rounded-full h-1.5">
+                  <div class="bg-${tc}-400 rounded-full h-1.5 transition-all" style="width:${tpct}%"></div>
+                </div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- Review wrong answers -->
+      <h3 class="font-semibold text-sm mb-3">Review Answers</h3>
+      <div class="space-y-3 mb-6">
+        ${qs.map((q, i) => {
+          const userAns = qz.answers[q.id];
+          const isCorrect = userAns === q.correct;
+          return `
+          <div class="bg-surface-light rounded-xl p-4 border ${isCorrect ? 'border-green-700/50' : 'border-red-700/50'}">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-xs font-bold ${isCorrect ? 'text-green-400' : 'text-red-400'}">${isCorrect ? 'Correct' : 'Wrong'}</span>
+              <span class="text-xs text-gray-500">Q${i + 1}</span>
+            </div>
+            <p class="text-sm font-medium mb-1">${escHtml(q.question)}</p>
+            ${q.questionVi ? `<p class="text-xs text-gray-500 italic mb-2">${escHtml(q.questionVi)}</p>` : ''}
+            ${!isCorrect ? `
+            <div class="text-xs mb-1"><span class="text-red-400">Your answer:</span> ${escHtml(q.options[userAns !== undefined ? userAns : -1] || 'No answer')}</div>
+            <div class="text-xs mb-2"><span class="text-green-400">Correct:</span> ${escHtml(q.options[q.correct])}</div>
+            ` : ''}
+            <p class="text-xs text-gray-400">${escHtml(q.explanation)}</p>
+            ${q.explanationVi ? `<p class="text-xs text-gray-500 italic mt-1">${escHtml(q.explanationVi)}</p>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+
+      <div class="flex gap-3">
+        <button onclick="startQuiz(State.quiz.filter, State.quiz.count)" class="flex-1 py-2.5 rounded-lg bg-modern hover:bg-modern-dark text-white font-medium transition text-sm">Try Again</button>
+        <button onclick="State.quiz.mode='setup'; render()" class="flex-1 py-2.5 rounded-lg bg-surface-lighter hover:bg-surface-light transition text-sm">Back to Setup</button>
+      </div>
+    </div>`;
+  }
+
+  // Active quiz - question screen
+  if (qz.mode === 'active') {
+    const q = qz.questions[qz.currentIndex];
+    if (!q) return '';
+    const userAns = qz.answers[q.id];
+    const hasAnswered = userAns !== undefined;
+    const allAnswered = qz.questions.every(qq => qz.answers[qq.id] !== undefined);
+
+    return `
+    <div class="max-w-2xl mx-auto slide-in">
+      <!-- Progress bar -->
+      <div class="flex items-center gap-3 mb-6">
+        <span class="text-sm text-gray-400 shrink-0">${qz.currentIndex + 1}/${qz.questions.length}</span>
+        <div class="flex-1 bg-surface rounded-full h-2">
+          <div class="bg-modern rounded-full h-2 transition-all" style="width: ${((qz.currentIndex + 1) / qz.questions.length) * 100}%"></div>
+        </div>
+        <span class="text-xs px-2 py-0.5 rounded badge-${q.difficulty}">${q.difficulty}</span>
+      </div>
+
+      <!-- Question dots -->
+      <div class="flex flex-wrap gap-1.5 mb-4">
+        ${qz.questions.map((qq, i) => {
+          const a = qz.answers[qq.id];
+          const isCurrent = i === qz.currentIndex;
+          let dotClass = 'bg-surface-lighter text-gray-400';
+          if (qz.submitted) {
+            dotClass = a === qq.correct ? 'bg-green-500/30 text-green-300' : 'bg-red-500/30 text-red-300';
+          } else if (a !== undefined) {
+            dotClass = 'bg-modern/30 text-modern-light';
+          }
+          if (isCurrent) dotClass += ' ring-2 ring-modern';
+          return `<button onclick="State.quiz.currentIndex=${i}; render()" class="w-7 h-7 rounded text-xs font-medium ${dotClass} transition">${i + 1}</button>`;
+        }).join('')}
+      </div>
+
+      <!-- Question card -->
+      <div class="bg-surface-light rounded-xl p-6 border border-gray-700 mb-4">
+        <p class="text-lg font-medium mb-1">${escHtml(q.question)}</p>
+        ${q.questionVi ? `<p class="text-sm text-gray-500 italic mb-5">${escHtml(q.questionVi)}</p>` : '<div class="mb-5"></div>'}
+
+        <div class="space-y-2">
+          ${q.options.map((opt, i) => {
+            let btnClass = 'bg-surface hover:bg-surface-lighter border-gray-600 text-gray-200';
+            const letter = String.fromCharCode(65 + i);
+            if (qz.submitted) {
+              if (i === q.correct) btnClass = 'bg-green-500/20 border-green-500 text-green-200';
+              else if (i === userAns && i !== q.correct) btnClass = 'bg-red-500/20 border-red-500 text-red-200';
+              else btnClass = 'bg-surface border-gray-700 text-gray-500';
+            } else if (userAns === i) {
+              btnClass = 'bg-modern/20 border-modern text-modern-light';
+            }
+            return `
+            <button onclick="quizSelect(${q.id}, ${i})" class="w-full p-3 rounded-lg border ${btnClass} transition text-left flex gap-3 items-start ${qz.submitted ? 'cursor-default' : ''}">
+              <span class="w-6 h-6 rounded-full border ${userAns === i || (qz.submitted && i === q.correct) ? 'border-current' : 'border-gray-600'} flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">${letter}</span>
+              <div>
+                <span class="text-sm">${escHtml(opt)}</span>
+                ${q.optionsVi && q.optionsVi[i] ? `<span class="text-xs text-gray-500 italic block">${escHtml(q.optionsVi[i])}</span>` : ''}
+              </div>
+            </button>`;
+          }).join('')}
+        </div>
+
+        ${qz.submitted ? `
+        <div class="mt-4 p-3 bg-surface rounded-lg border border-gray-600">
+          <p class="text-sm text-gray-300">${escHtml(q.explanation)}</p>
+          ${q.explanationVi ? `<p class="text-xs text-gray-500 italic mt-1">${escHtml(q.explanationVi)}</p>` : ''}
+        </div>` : ''}
+      </div>
+
+      <!-- Navigation -->
+      <div class="flex gap-3">
+        <button onclick="quizNext(-1)" class="px-4 py-2 rounded-lg bg-surface-lighter hover:bg-surface-light transition text-sm" ${qz.currentIndex === 0 ? 'disabled' : ''}>Previous</button>
+        <div class="flex-1"></div>
+        ${!qz.submitted && allAnswered ? `
+        <button onclick="quizSubmit()" class="px-6 py-2 rounded-lg bg-green-500/20 text-green-300 hover:bg-green-500/30 border border-green-500/50 transition text-sm font-medium">Submit Test</button>` : ''}
+        ${!qz.submitted && !allAnswered ? `
+        <span class="text-xs text-gray-500 self-center">${Object.keys(qz.answers).length}/${qz.questions.length} answered</span>` : ''}
+        <button onclick="quizNext(1)" class="px-4 py-2 rounded-lg bg-surface-lighter hover:bg-surface-light transition text-sm" ${qz.currentIndex >= qz.questions.length - 1 ? 'disabled' : ''}>Next</button>
+      </div>
+    </div>`;
+  }
+
+  return '';
+}
 
 // ========== RESET ALL ==========
 function resetAll() {
