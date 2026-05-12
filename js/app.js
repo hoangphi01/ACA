@@ -129,7 +129,10 @@ function switchMode(mode) {
 }
 
 // ========== RENDER ==========
-function render() {
+let _lastMode = null;
+let _lastTopicId = null;
+
+function render(scrollTop) {
   const content = document.getElementById('content');
   Progress.updateStreak();
   switch (State.currentMode) {
@@ -144,7 +147,13 @@ function render() {
     case 'quiz': content.innerHTML = renderQuiz(); break;
   }
   attachEventListeners();
-  window.scrollTo(0, 0);
+  // Only scroll to top on mode/topic change, not on every re-render
+  const modeChanged = _lastMode !== State.currentMode || (State.currentMode === 'topic-detail' && _lastTopicId !== State.currentTopicId);
+  if (scrollTop || modeChanged) {
+    window.scrollTo(0, 0);
+  }
+  _lastMode = State.currentMode;
+  _lastTopicId = State.currentTopicId;
 }
 
 // ========== TOPIC LIST VIEW ==========
